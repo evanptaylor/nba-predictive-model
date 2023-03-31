@@ -1,6 +1,7 @@
 import requests
 import pandas as pd
 import numpy as np
+import secrets
 from datetime import datetime, timedelta
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.ensemble import RandomForestClassifier, VotingClassifier
@@ -10,8 +11,7 @@ from sklearn.metrics import accuracy_score, confusion_matrix
 from nba_api.stats.static import teams
 from nba_api.stats.endpoints import leaguegamefinder, teamdashboardbylastngames, playerdashboardbylastngames, leaguegamelog
 
-# Replace with your API key
-API_KEY = "72f975515f75626b533a11b8354015e6"
+API_KEY = secrets.api_key
 
 def fetch_odds_data(start_date, end_date, api_key):
     url = "https://api.the-odds-api.com/v4/sports/basketball_nba/odds/"
