@@ -1,7 +1,9 @@
 import requests
 import pandas as pd
 import numpy as np
-import secrets
+import openpyxl
+from openpyxl import load_workbook
+from openpyxl.styles import PatternFill
 from datetime import datetime, timedelta
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.ensemble import RandomForestClassifier, VotingClassifier
@@ -9,11 +11,12 @@ from sklearn.linear_model import LogisticRegression
 from xgboost import XGBClassifier
 from sklearn.metrics import accuracy_score, confusion_matrix
 from nba_api.stats.static import teams
-from nba_api.stats.endpoints import leaguegamefinder, teamdashboardbylastngames, playerdashboardbylastngames, leaguegamelog
+from nba_api.stats.endpoints import leaguegamelog
+import config
 
-API_KEY = secrets.api_key
+API_KEY = '72f975515f75626b533a11b8354015e6'
 
-def fetch_odds_data(start_date, end_date, api_key):
+def fetch_odds_data(api_key):
     url = "https://api.the-odds-api.com/v4/sports/basketball_nba/odds/"
 
     # Add parameters to a dictionary
@@ -23,9 +26,7 @@ def fetch_odds_data(start_date, end_date, api_key):
         'markets': 'h2h',
         'oddsFormat': 'american',
         'dateFormat': 'iso',
-        'start': start_date,
-        'end': end_date,
-        'bookmakers': ['draftkings']
+        'bookmakers': ['draftkings'],
         #'bookmakers': 1
     }
 
@@ -49,19 +50,23 @@ def fetch_odds_data(start_date, end_date, api_key):
     return pd.DataFrame(odds_list)
 
 
-def fetch_team_stats_data():
+def fetch_team_stats_data(start_date, end_date):
     nba_teams = teams.get_teams()
 
     # Fetch NBA game logs for all time
+    #game_log = leaguegamelog.LeagueGameLog(date_from_nullable=start_date, date_to_nullable=end_date, league_id='00')
     game_log = leaguegamelog.LeagueGameLog(season='2021-22', league_id='00')
     games = game_log.get_data_frames()[0]
     nba_games = games[games['TEAM_ID'].isin([team['id'] for team in nba_teams])]
+    #games_21_22 = games[games.SEASON_ID.str[-4:] == '2021']
 
+    #print(nba_games)
     # Calculate the stats for each team
     team_stats = []
     for team in nba_teams:
         team_id = team['id']
         team_games = nba_games[(nba_games['TEAM_ID'] == team_id)]
+        #wonlast = 1 if team_games[team_games['WL'][len(team_games[team_games['WL']])-1] == 'W'] else 0
         wins = len(team_games[team_games['WL'] == 'W'])
         losses = len(team_games[team_games['WL'] == 'L'])
         win_percentage = wins / (wins + losses) if (wins + losses) > 0 else 0
@@ -87,24 +92,19 @@ def fetch_team_stats_data():
             'reb':avg_reb,
             'oreb':avg_oreb,
             'ast':avg_ast,
-            'tov':avg_tov
+            'tov':avg_tov,
         }
         team_stats.append(team_stat)
-
     return pd.DataFrame(team_stats)
 
 def preprocess_data(odds_data, team_stats_data):
     # Merge the data, drop unnecessary columns, and create features
-    #merged_data = pd.merge(odds_data, team_stats_data, left_on='team1_id', right_on='TEAM_ID')
-    #merged_data = pd.merge(merged_data, team_stats_data, left_on='team2_id', right_on='TEAM_ID', suffixes=('_team1', '_team2'))
-    #merged_data = pd.merge(odds_data, team_stats_data)
-    #merged_data = pd.merge(merged_data, team_stats_data)
-    
+
     for team in odds_data['team1_name']:
         merged_df = odds_data.merge(team_stats_data, left_on="team1_name", right_on="team_name", suffixes=('', '_team1'))
         merged_df = merged_df.merge(team_stats_data, left_on="team2_name", right_on="team_name", suffixes=('_team1', '_team2'))
         merged_df = merged_df.drop(columns=['TEAM_ID_team1', 'team_name_team1', 'TEAM_ID_team2', 'team_name_team2'])
-    # Add any additional preprocessing steps needed
+ 
     return merged_df
 
 # Create new features
@@ -169,19 +169,52 @@ def predict_upcoming_games(model, upcoming_odds_data, team_stats_data):
 
     return upcoming_data
 
+def format_excel(file):
+    # Load the workbook and select the sheet
+    wb = load_workbook(file)
+    ws = wb.active
+
+    # Define the fill colors for the winner and loser
+    winner_fill = PatternFill(start_color="90EE90", end_color="90EE90", fill_type="solid")
+    loser_fill = PatternFill(start_color="FFC0CB", end_color="FFC0CB", fill_type="solid")
+
+    # Iterate through the rows and apply the fill colors
+    for row in range(2, ws.max_row + 1):
+        team1_prob = ws.cell(row=row, column=6).value
+        team2_prob = ws.cell(row=row, column=7).value
+        
+        if team1_prob > team2_prob:
+            ws.cell(row=row, column=1).fill = winner_fill
+            ws.cell(row=row, column=2).fill = loser_fill
+            ws.cell(row=row, column=3).fill = winner_fill
+            ws.cell(row=row, column=4).fill = loser_fill
+            ws.cell(row=row, column=5).fill = winner_fill
+            ws.cell(row=row, column=6).fill = winner_fill
+            ws.cell(row=row, column=7).fill = loser_fill
+        else:
+            ws.cell(row=row, column=1).fill = loser_fill
+            ws.cell(row=row, column=2).fill = winner_fill
+            ws.cell(row=row, column=3).fill = loser_fill
+            ws.cell(row=row, column=4).fill = winner_fill
+            ws.cell(row=row, column=5).fill = winner_fill
+            ws.cell(row=row, column=6).fill = loser_fill
+            ws.cell(row=row, column=7).fill = winner_fill
+    
+    for col in range(1, 26):
+        ws.column_dimensions[chr(col + 64)].width = 20
+    # Save the formatted workbook
+    wb.save("upcoming_bets.xlsx")
 
 # Main code
 if __name__ == "__main__":
-    # Define custom date range for fetching odds data
-    #start_date = (datetime.today() - timedelta(days=10)).strftime('%Y-%m-%d')
-    #end_date = datetime.today().strftime('%Y-%m-%d')
+    # Define custom date range for fetching training data
 
-    start_date = '%2021-%10-%19'
-    end_date = '%2022-%04-%10'
+    start_date = "%2021-%10-%19"
+    end_date = "%2022-%04-%10"
 
     # Fetch data
-    odds_data = fetch_odds_data(start_date, end_date, API_KEY)
-    team_stats_data = fetch_team_stats_data()
+    odds_data = fetch_odds_data(API_KEY)
+    team_stats_data = fetch_team_stats_data(start_date, end_date)
     team_ids = team_stats_data['TEAM_ID'].unique()
     # Preprocess data
     data = preprocess_data(odds_data, team_stats_data)
@@ -207,17 +240,21 @@ if __name__ == "__main__":
     print(f"Model accuracy: {accuracy}")
 
     # Calculate confusion matrix
-    cm = confusion_matrix(y_test, predictions)
-    print("Confusion matrix:\n", cm)
+    #cm = confusion_matrix(y_test, predictions)
+    #print("Confusion matrix:\n", cm)
 
-
-'''
     # Fetch upcoming games odds data (change the start_date and end_date to the desired range)
-    upcoming_start_date = '2023-04-01'
-    upcoming_end_date = '2023-04-10'
-    upcoming_odds_data = fetch_odds_data(upcoming_start_date, upcoming_end_date, API_KEY)
+    upcoming_odds_data = fetch_odds_data(API_KEY)
 
     # Predict upcoming games
     upcoming_game_predictions = predict_upcoming_games(model, upcoming_odds_data, team_stats_data)
+    
+    keep = ['team1_name','team2_name','team1_odds','team2_odds','predicted_winner','team1_probability','team2_probability']
+    upcoming_game_predictions = upcoming_game_predictions.filter(keep)
+    
     print("Upcoming game predictions:\n", upcoming_game_predictions)
-'''  
+    
+    upcoming_game_predictions.to_excel("predictions.xlsx", index=False)
+    format_excel("predictions.xlsx")
+    
+
