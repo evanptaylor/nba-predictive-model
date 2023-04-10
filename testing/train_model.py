@@ -154,8 +154,8 @@ def train_stacked_model(X_train, y_train):
 if __name__ == "__main__":
     #start and end date for training data
     #start_date = "2022-10-19" #start of nba season 2022-23
-    start_date = "2023-02-19" #all star game 2023
-    end_date = "2023-04-03"
+    start_date = "2023-02-10" #trade deadline 2023
+    end_date = "2023-04-09" #current day
 
     #fetch all data and preproccess
     odds_data = fetch_odds_data(API_KEY)
@@ -166,17 +166,12 @@ if __name__ == "__main__":
     #set matrix and vector
     X = select_features(data)
     y = np.where(data['team1_odds'] < data['team2_odds'], 1, 0)
-    
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # Train the model
-    model = RandomForestClassifier()
-    model.fit(X_train, y_train)
-
-    # Evaluate the model
+    model = train_stacked_model(X_train, y_train)
     predictions = model.predict(X_test)
 
-    # Save the trained model to disk
+    # save trained model to .pkl
     model_filename = 'trained_model.pkl'
     with open(model_filename, 'wb') as file:
         pickle.dump(model, file)
