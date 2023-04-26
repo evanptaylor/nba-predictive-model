@@ -12,10 +12,12 @@ from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
 import config
 
+#import api key from seperate file
 API_KEY = config.api_key
 
+#fetch moneyline odds for upcoming NBA games 
 def fetch_odds_data(api_key):
-    
+    #the odds api 
     url = "https://api.the-odds-api.com/v4/sports/basketball_nba/odds/"
     
     #add odds and teams for upcoming games to a dataframe
@@ -45,6 +47,7 @@ def fetch_odds_data(api_key):
         odds_list.append(game_data)
     return pd.DataFrame(odds_list)
 
+#fetch historical team statisitcal data from nba_api library
 def fetch_team_stats_data(start_date, end_date):
     #get game logs for all teams in date range
     nba_teams = teams.get_teams()
@@ -100,7 +103,7 @@ def fetch_team_stats_data(start_date, end_date):
             'plus_minus': plus_minus,
             'efg_pct': efg_pct,
             'pace': pace,
-            'off_rating': off_rating,
+            'off_rating': off_rating, 
             'net_rating': net_rating,
             'ast_ratio': ast_ratio,
             'tov_pct':tov_pct
@@ -116,11 +119,13 @@ def preprocess_data(odds_data, team_stats_data):
         merged_df = merged_df.drop(columns=['TEAM_ID_team1', 'team_name_team1', 'TEAM_ID_team2', 'team_name_team2'])
     return merged_df
 
+#make data 'friendly' for the matrix operations
 def select_features(data):
     #drop non-numerical columns for input matrix
     features_to_drop = ['game_id', 'team1_name', 'team2_name','team1_odds','team2_odds']
     return data.drop(columns=features_to_drop)
 
+#employ a voting classifier to choose between regression models
 def train_stacked_model(X_train, y_train):
     #train multiple models
     rf_params = {
@@ -131,7 +136,7 @@ def train_stacked_model(X_train, y_train):
     }
 
     rf = RandomForestClassifier()
-    grid_search = GridSearchCV(rf, rf_params, cv=3, n_jobs=-1)
+    grid_search = GridSearchCV(rf, rf_params, cv=2, n_jobs=-1)
     grid_search.fit(X_train, y_train)
     best_rf = grid_search.best_estimator_
 
@@ -164,6 +169,7 @@ def predict_upcoming_games(model, upcoming_odds_data, team_stats_data):
 
     return upcoming_data
 
+#output formatting
 def format_excel(file):
     #load and format data into excel file
     wb = load_workbook(file)
